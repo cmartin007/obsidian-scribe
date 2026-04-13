@@ -11,6 +11,8 @@ import {
   type SupportedMimeType,
 } from 'src/util/mimeType';
 
+export type RecordingState = 'inactive' | 'recording' | 'paused';
+
 export class AudioRecord {
   mediaRecorder: MediaRecorder | null;
   data: BlobPart[] = [];
@@ -72,8 +74,35 @@ export class AudioRecord {
 
         recorder.start();
       });
-    } catch (err) {
-      new Notice('Scribe: Failed to access the microphone');
+    } catch (err: unknown) {
+      // Improved error handling for iOS/mobile mic issues
+      const error = err as Error & { name?: string };
+      const errorName = error?.name ?? '';
+      const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+
+      if (isIOS) {
+        if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
+          new Notice('Scribe: ⚠️ Microphone access denied. Please go to Settings > Privacy > Microphone > Obsidian and enable it.');
+        } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
+          new Notice('Scribe: ⚠️ No microphone found. On iPhone, use the Voice Memos app to record, then transcribe via "Transcribe & Summarize Current File" in Scribe.');
+        } else if (errorName === 'NotReadableError' || errorName === 'TrackStartError') {
+          new Notice('Scribe: ⚠️ Microphone is already in use. Close other apps using the mic (camera, FaceTime, etc.) and try again.');
+        } else {
+          new Notice('Scribe: ⚠️ iOS recording error. For best results, record using the Voice Memos app, then use "Transcribe & Summarize Current File" on the audio file.');
+        }
+      } else {
+        // Desktop / non-iOS error messages
+        if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
+          new Notice('Scribe: ⚠️ Microphone access denied. Please allow mic access in your system settings and browser permissions.');
+        } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
+          new Notice('Scribe: ⚠️ No microphone detected. Please connect a microphone and try again.');
+        } else if (errorName === 'NotReadableError' || errorName === 'TrackStartError') {
+          new Notice('Scribe: ⚠️ Microphone is already in use by another application. Please close other apps using the microphone.');
+        } else {
+          new Notice(`Scribe: ⚠️ Failed to access microphone: ${error?.message ?? 'Unknown error'}`);
+        }
+      }
+
       console.error('Error accessing microphone:', err);
       this.mediaRecorder = null;
       this.startTime = null;
